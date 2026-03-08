@@ -116,6 +116,10 @@ fn stream_exists(s: &VirtualGpuState, stream: hipStream_t) -> bool {
     stream_is_default(stream) || s.streams.contains(&(stream.0 as usize))
 }
 
+fn is_user_stream(s: &VirtualGpuState, stream: hipStream_t) -> bool {
+    !stream_is_default(stream) && s.streams.contains(&(stream.0 as usize))
+}
+
 fn event_exists(s: &VirtualGpuState, event: hipEvent_t) -> bool {
     s.events.contains_key(&(event.0 as usize))
 }
@@ -486,7 +490,7 @@ pub(crate) fn stream_synchronize(stream: hipStream_t) -> hipError_t {
         return Ok(());
     }
     let s = state().lock().map_err(|_| hipErrorCode_t::InvalidValue)?;
-    if s.streams.contains(&(stream.0 as usize)) {
+    if is_user_stream(&s, stream) {
         Ok(())
     } else {
         Err(hipErrorCode_t::InvalidResourceHandle)
@@ -498,7 +502,7 @@ pub(crate) fn stream_begin_capture(stream: hipStream_t, mode: hipStreamCaptureMo
         return Err(hipErrorCode_t::InvalidValue);
     }
     let mut s = state().lock().map_err(|_| hipErrorCode_t::InvalidValue)?;
-    if !stream_exists(&s, stream) || stream_is_default(stream) {
+    if !is_user_stream(&s, stream) {
         return Err(hipErrorCode_t::InvalidResourceHandle);
     }
     if s.stream_capture_ids.contains_key(&(stream.0 as usize)) {
@@ -515,7 +519,7 @@ pub(crate) fn stream_end_capture(
     graph: *mut hip_runtime_sys::hipGraph_t,
 ) -> hipError_t {
     let mut s = state().lock().map_err(|_| hipErrorCode_t::InvalidValue)?;
-    if !stream_exists(&s, stream) || stream_is_default(stream) {
+    if !is_user_stream(&s, stream) {
         return Err(hipErrorCode_t::InvalidResourceHandle);
     }
     if s.stream_capture_ids.remove(&(stream.0 as usize)).is_none() {
@@ -535,7 +539,7 @@ pub(crate) fn stream_is_capturing(
         return Err(hipErrorCode_t::InvalidValue);
     }
     let s = state().lock().map_err(|_| hipErrorCode_t::InvalidValue)?;
-    if !stream_exists(&s, stream) || stream_is_default(stream) {
+    if !is_user_stream(&s, stream) {
         return Err(hipErrorCode_t::InvalidResourceHandle);
     }
     unsafe {
@@ -560,7 +564,7 @@ pub(crate) fn stream_get_capture_info(
         return Err(hipErrorCode_t::InvalidValue);
     }
     let s = state().lock().map_err(|_| hipErrorCode_t::InvalidValue)?;
-    if !stream_exists(&s, stream) || stream_is_default(stream) {
+    if !is_user_stream(&s, stream) {
         return Err(hipErrorCode_t::InvalidResourceHandle);
     }
     let capture_id = s.stream_capture_ids.get(&(stream.0 as usize)).copied();
