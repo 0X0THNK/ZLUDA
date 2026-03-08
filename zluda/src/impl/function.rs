@@ -2,6 +2,8 @@ use cuda_types::cuda::CUfunction_attribute;
 use hip_runtime_sys::*;
 use std::mem;
 
+use crate::r#impl::virtual_gpu;
+
 pub(crate) fn get_attribute(
     pi: &mut i32,
     cu_attrib: CUfunction_attribute,
@@ -46,6 +48,11 @@ pub(crate) fn launch_kernel(
     kernel_params: *mut *mut ::core::ffi::c_void,
     extra: *mut *mut ::core::ffi::c_void,
 ) -> hipError_t {
+    if virtual_gpu::enabled() {
+        if let Some(result) = virtual_gpu::launch_known_kernel(f, kernel_params) {
+            return result;
+        }
+    }
     // TODO: fix constants in extra
     unsafe {
         hipModuleLaunchKernel(

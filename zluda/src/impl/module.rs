@@ -1,4 +1,4 @@
-use super::driver;
+use super::{driver, virtual_gpu};
 use crate::r#impl::driver::GlobalState;
 use cuda_types::{cuda::*, dark_api::FatbinFileHeader};
 use hip_runtime_sys::*;
@@ -247,7 +247,13 @@ pub(crate) fn get_function(
     hmod: &Module,
     name: *const ::core::ffi::c_char,
 ) -> hipError_t {
-    unsafe { hipModuleGetFunction(hfunc, hmod.base, name) }
+    unsafe { hipModuleGetFunction(hfunc, hmod.base, name) }?;
+    if virtual_gpu::enabled() {
+        if let Ok(name) = unsafe { CStr::from_ptr(name) }.to_str() {
+            virtual_gpu::register_function_name(*hfunc, name);
+        }
+    }
+    Ok(())
 }
 
 pub(crate) fn get_global_v2(
