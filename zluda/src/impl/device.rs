@@ -1,4 +1,4 @@
-use super::{context, driver};
+use super::{context, driver, virtual_gpu};
 use cuda_types::cuda::*;
 use hip_runtime_sys::*;
 use std::mem;
@@ -11,6 +11,18 @@ pub(crate) fn compute_capability(major: &mut i32, minor: &mut i32, _dev: hipDevi
 }
 
 pub(crate) fn get(device: *mut hipDevice_t, ordinal: i32) -> hipError_t {
+    if virtual_gpu::enabled() {
+        if device.is_null() {
+            return Err(hipErrorCode_t::InvalidValue);
+        }
+        if let Some(dev) = virtual_gpu::virtual_device_for_ordinal(ordinal) {
+            unsafe {
+                *device = dev;
+            }
+            return Ok(());
+        }
+        return Err(hipErrorCode_t::InvalidDevice);
+    }
     unsafe { hipDeviceGet(device, ordinal) }
 }
 
@@ -71,6 +83,10 @@ pub(crate) fn get_attribute(
     attrib: CUdevice_attribute,
     dev_idx: hipDevice_t,
 ) -> hipError_t {
+    if virtual_gpu::enabled() && virtual_gpu::get_attribute(pi, attrib) {
+        let _ = dev_idx;
+        return Ok(());
+    }
     fn get_device_prop(
         pi: &mut i32,
         dev_idx: hipDevice_t,
@@ -429,16 +445,49 @@ pub(crate) fn get_name(
     len: ::core::ffi::c_int,
     dev: hipDevice_t,
 ) -> CUresult {
+    if virtual_gpu::enabled() {
+        if name.is_null() || len <= 0 {
+            return Err(CUerror::INVALID_VALUE);
+        }
+        let _ = dev;
+        const VIRTUAL_NAME: &[u8] = b"ZLUDA Virtual CUDA GPU ";
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                VIRTUAL_NAME.as_ptr().cast::<::core::ffi::c_char>(),
+                name,
+                usize::min(VIRTUAL_NAME.len(), len as usize),
+            );
+        }
+        zluda_common::append_suffix(name, len as usize);
+        return Ok(());
+    }
     unsafe { hipDeviceGetName(name, len, dev) }?;
     zluda_common::append_suffix(name, len as usize);
     Ok(())
 }
 
 pub(crate) fn total_mem_v2(bytes: *mut usize, dev: hipDevice_t) -> hipError_t {
+    if virtual_gpu::enabled() {
+        let _ = dev;
+        return virtual_gpu::total_mem(bytes);
+    }
     unsafe { hipDeviceTotalMem(bytes, dev) }
 }
 
 pub(crate) fn get_properties(prop: &mut CUdevprop, dev: hipDevice_t) -> hipError_t {
+    if virtual_gpu::enabled() {
+        let _ = dev;
+        prop.maxThreadsPerBlock = 1024;
+        prop.maxThreadsDim = [1024, 1024, 64];
+        prop.maxGridSize = [2147483647, 65535, 65535];
+        prop.totalConstantMemory = i32::MAX;
+        prop.SIMDWidth = 32;
+        prop.memPitch = i32::MAX;
+        prop.regsPerBlock = 65536;
+        prop.clockRate = 1500000;
+        prop.textureAlign = 512;
+        return Ok(());
+    }
     let mut hip_props = unsafe { mem::zeroed() };
     unsafe { hipGetDevicePropertiesR0600(&mut hip_props, dev) }?;
     prop.maxThreadsPerBlock = hip_props.maxThreadsPerBlock;
@@ -454,6 +503,10 @@ pub(crate) fn get_properties(prop: &mut CUdevprop, dev: hipDevice_t) -> hipError
 }
 
 pub(crate) fn get_count(count: &mut ::core::ffi::c_int) -> hipError_t {
+    if virtual_gpu::enabled() {
+        virtual_gpu::get_count(count);
+        return Ok(());
+    }
     unsafe { hipGetDeviceCount(count) }
 }
 

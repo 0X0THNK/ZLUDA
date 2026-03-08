@@ -1,12 +1,16 @@
 use crate::r#impl::{
     context,
     driver::{self, global_state},
+    virtual_gpu,
 };
 use cuda_types::cuda::{CUerror, CUresult, CUresultConsts};
 use hip_runtime_sys::*;
 use std::{mem, ptr};
 
 pub(crate) unsafe fn alloc_v2(dptr: &mut hipDeviceptr_t, bytesize: usize) -> CUresult {
+    if virtual_gpu::enabled() {
+        return virtual_gpu::alloc(dptr, bytesize);
+    }
     let global = global_state()?;
     let context = context::get_current_context()?;
     hipMalloc(ptr::from_mut(dptr).cast(), bytesize)?;
@@ -22,6 +26,9 @@ pub(crate) unsafe fn alloc_v2(dptr: &mut hipDeviceptr_t, bytesize: usize) -> CUr
 }
 
 pub(crate) unsafe fn free_v2(dptr: hipDeviceptr_t) -> CUresult {
+    if virtual_gpu::enabled() {
+        return virtual_gpu::free(dptr);
+    }
     let hip_result = hipFree(dptr.0);
     remove_allocation(dptr.0)?;
     Ok(hip_result?)
@@ -32,6 +39,9 @@ pub(crate) fn copy_dto_h_v2(
     src_device: hipDeviceptr_t,
     byte_count: usize,
 ) -> hipError_t {
+    if virtual_gpu::enabled() {
+        return virtual_gpu::memcpy_dto_h(dst_host, src_device, byte_count);
+    }
     unsafe { hipMemcpyDtoH(dst_host, src_device, byte_count) }
 }
 
@@ -40,6 +50,9 @@ pub(crate) fn copy_hto_d_v2(
     src_host: *const ::core::ffi::c_void,
     byte_count: usize,
 ) -> hipError_t {
+    if virtual_gpu::enabled() {
+        return virtual_gpu::memcpy_hto_d(dst_device, src_host, byte_count);
+    }
     unsafe { hipMemcpyHtoD(dst_device, src_host.cast_mut(), byte_count) }
 }
 
@@ -48,6 +61,9 @@ pub(crate) fn copy_hto_d_v2_ptds(
     src_host: *const ::core::ffi::c_void,
     byte_count: usize,
 ) -> hipError_t {
+    if virtual_gpu::enabled() {
+        return virtual_gpu::memcpy_hto_d(dst_device, src_host, byte_count);
+    }
     unsafe {
         hipMemcpy_spt(
             dst_device.0.cast(),
@@ -63,6 +79,9 @@ pub(crate) fn copy_dto_h_v2_ptds(
     src_device: hipDeviceptr_t,
     byte_count: usize,
 ) -> hipError_t {
+    if virtual_gpu::enabled() {
+        return virtual_gpu::memcpy_dto_h(dst_host, src_device, byte_count);
+    }
     unsafe {
         hipMemcpy_spt(
             dst_host.cast(),
@@ -78,10 +97,16 @@ pub(crate) fn get_address_range_v2(
     psize: *mut usize,
     dptr: hipDeviceptr_t,
 ) -> hipError_t {
+    if virtual_gpu::enabled() {
+        return virtual_gpu::get_address_range(pbase, psize, dptr);
+    }
     unsafe { hipMemGetAddressRange(pbase, psize, dptr) }
 }
 
 pub(crate) fn set_d8_v2(dst: hipDeviceptr_t, value: ::core::ffi::c_uchar, n: usize) -> hipError_t {
+    if virtual_gpu::enabled() {
+        return virtual_gpu::memset_d8(dst, value, n);
+    }
     unsafe { hipMemsetD8(dst, value, n) }
 }
 
@@ -91,6 +116,10 @@ pub(crate) fn set_d8_async(
     n: usize,
     stream: hipStream_t,
 ) -> hipError_t {
+    if virtual_gpu::enabled() {
+        let _ = stream;
+        return virtual_gpu::memset_d8(dst, value, n);
+    }
     unsafe { hipMemsetD8Async(dst, value, n, stream) }
 }
 
@@ -99,6 +128,9 @@ pub(crate) fn set_d16_v2(
     value: ::core::ffi::c_ushort,
     n: usize,
 ) -> hipError_t {
+    if virtual_gpu::enabled() {
+        return virtual_gpu::memset_d16(dst, value, n);
+    }
     unsafe { hipMemsetD16(dst, value, n) }
 }
 
@@ -108,10 +140,17 @@ pub(crate) fn set_d16_async(
     n: usize,
     stream: hipStream_t,
 ) -> hipError_t {
+    if virtual_gpu::enabled() {
+        let _ = stream;
+        return virtual_gpu::memset_d16(dst, value, n);
+    }
     unsafe { hipMemsetD16Async(dst, value, n, stream) }
 }
 
 pub(crate) fn set_d32_v2(dst: hipDeviceptr_t, value: ::core::ffi::c_uint, n: usize) -> hipError_t {
+    if virtual_gpu::enabled() {
+        return virtual_gpu::memset_d32(dst, value, n);
+    }
     unsafe { hipMemsetD32(dst, value as _, n) }
 }
 
@@ -121,10 +160,17 @@ pub(crate) fn set_d32_async(
     n: usize,
     stream: hipStream_t,
 ) -> hipError_t {
+    if virtual_gpu::enabled() {
+        let _ = stream;
+        return virtual_gpu::memset_d32(dst, value, n);
+    }
     unsafe { hipMemsetD32Async(dst, value as _, n, stream) }
 }
 
 pub(crate) fn get_info_v2(free: *mut usize, total: *mut usize) -> hipError_t {
+    if virtual_gpu::enabled() {
+        return virtual_gpu::mem_get_info(free, total);
+    }
     unsafe { hipMemGetInfo(free, total) }
 }
 
@@ -196,6 +242,10 @@ pub(crate) unsafe fn copy_hto_d_async_v2(
     byte_count: usize,
     stream: hipStream_t,
 ) -> hipError_t {
+    if virtual_gpu::enabled() {
+        let _ = stream;
+        return virtual_gpu::memcpy_hto_d(dst_device, src_host, byte_count);
+    }
     hipMemcpyHtoDAsync(dst_device, src_host.cast_mut(), byte_count, stream)
 }
 
@@ -205,6 +255,10 @@ pub(crate) unsafe fn copy_dto_h_async_v2(
     byte_count: usize,
     stream: hipStream_t,
 ) -> hipError_t {
+    if virtual_gpu::enabled() {
+        let _ = stream;
+        return virtual_gpu::memcpy_dto_h(dst_host, src_device, byte_count);
+    }
     hipMemcpyDtoHAsync(dst_host, src_device, byte_count, stream)
 }
 
@@ -214,6 +268,10 @@ pub(crate) unsafe fn copy_dto_d_async_v2(
     byte_count: usize,
     stream: hipStream_t,
 ) -> hipError_t {
+    if virtual_gpu::enabled() {
+        let _ = stream;
+        return virtual_gpu::memcpy_dto_d(dst_device, src_device, byte_count);
+    }
     hipMemcpyDtoDAsync(dst_device, src_device, byte_count, stream)
 }
 
@@ -223,6 +281,10 @@ pub(crate) unsafe fn copy_async(
     byte_count: usize,
     stream: hipStream_t,
 ) -> hipError_t {
+    if virtual_gpu::enabled() {
+        let _ = stream;
+        return virtual_gpu::memcpy_dto_d(dst, src, byte_count);
+    }
     hipMemcpyAsync(
         dst.0,
         src.0,
@@ -247,6 +309,9 @@ pub(crate) unsafe fn alloc_pitch_v2(
     height: usize,
     element_size_bytes: ::core::ffi::c_uint,
 ) -> CUresult {
+    if virtual_gpu::enabled() {
+        return virtual_gpu::alloc_pitch(dptr, p_pitch, width_in_bytes, height, element_size_bytes);
+    }
     hipMemAllocPitch(
         dptr.cast(),
         p_pitch,
@@ -258,11 +323,17 @@ pub(crate) unsafe fn alloc_pitch_v2(
 }
 
 pub(crate) unsafe fn copy_2d_v2(memcpy: hip_Memcpy2D) -> CUresult {
+    if virtual_gpu::enabled() {
+        return virtual_gpu::copy_2d(memcpy);
+    }
     hipMemcpyParam2D(&memcpy)?;
     Ok(())
 }
 
 pub(crate) unsafe fn copy_2d_unaligned_v2(memcpy: hip_Memcpy2D) -> CUresult {
+    if virtual_gpu::enabled() {
+        return virtual_gpu::copy_2d(memcpy);
+    }
     hipDrvMemcpy2DUnaligned(&memcpy)?;
     Ok(())
 }
@@ -274,6 +345,9 @@ pub(crate) unsafe fn set_d_2d32_v2(
     width: usize,
     height: usize,
 ) -> hipError_t {
+    if virtual_gpu::enabled() {
+        return virtual_gpu::memset2d_d32(dst_device, dst_pitch, value, width, height);
+    }
     hipMemset2D(dst_device.0, dst_pitch, value as _, width, height)
 }
 pub(crate) unsafe fn set_d_2d32_async(
@@ -284,5 +358,9 @@ pub(crate) unsafe fn set_d_2d32_async(
     height: usize,
     stream: hipStream_t,
 ) -> hipError_t {
+    if virtual_gpu::enabled() {
+        let _ = stream;
+        return virtual_gpu::memset2d_d32(dst_device, dst_pitch, value, width, height);
+    }
     hipMemset2DAsync(dst_device.0, dst_pitch, value as _, width, height, stream)
 }
